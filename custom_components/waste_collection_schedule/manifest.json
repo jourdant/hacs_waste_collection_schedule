@@ -15,7 +15,7 @@
     "pycryptodome",
     "pypdf",
     "cloudscraper",
-    "PyMuPDF"
+    "pdfplumber"
   ],
   "version": "2.11.0"
 }
