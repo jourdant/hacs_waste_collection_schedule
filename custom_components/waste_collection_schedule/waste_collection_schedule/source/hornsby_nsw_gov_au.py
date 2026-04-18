@@ -287,6 +287,8 @@ def _extract_month_headers(words: list[dict[str, Any]]) -> list[MonthHeader]:
         if month_text not in month_name_set:
             continue
 
+        best_year_word = None
+        best_gap = float("inf")
         for j, candidate_year in enumerate(words):
             if i == j:
                 continue
@@ -296,24 +298,30 @@ def _extract_month_headers(words: list[dict[str, Any]]) -> list[MonthHeader]:
                 continue
             if candidate_year["x0"] < word["x1"]:
                 continue
-            if (candidate_year["x0"] - word["x1"]) > MONTH_YEAR_MAX_X_GAP:
+            gap = candidate_year["x0"] - word["x1"]
+            if gap > MONTH_YEAR_MAX_X_GAP:
                 continue
+            if gap < best_gap:
+                best_gap = gap
+                best_year_word = candidate_year
 
-            x0 = min(word["x0"], candidate_year["x0"])
-            x1 = max(word["x1"], candidate_year["x1"])
-            top = min(word["top"], candidate_year["top"])
-            bottom = max(word["bottom"], candidate_year["bottom"])
+        if best_year_word is None:
+            continue
 
-            headers.append(
-                {
-                    "month": month_text,
-                    "year": int(candidate_year["text"].strip()),
-                    "bbox": (x0, top, x1, bottom),
-                    "center": ((x0 + x1) / 2.0, (top + bottom) / 2.0),
-                    "col": None,
-                }
-            )
-            break
+        x0 = min(word["x0"], best_year_word["x0"])
+        x1 = max(word["x1"], best_year_word["x1"])
+        top = min(word["top"], best_year_word["top"])
+        bottom = max(word["bottom"], best_year_word["bottom"])
+
+        headers.append(
+            {
+                "month": month_text,
+                "year": int(best_year_word["text"].strip()),
+                "bbox": (x0, top, x1, bottom),
+                "center": ((x0 + x1) / 2.0, (top + bottom) / 2.0),
+                "col": None,
+            }
+        )
 
     return headers
 
@@ -336,6 +344,8 @@ def _collect_colored_shapes(page: Any) -> list[MarkerShape]:
         )
 
     for rect in page.rects:
+        if not rect.get("fill"):
+            continue
         fill = _normalize_color_to_rgb(rect.get("non_stroking_color"))
         if fill is None or _is_near_white(fill):
             continue
@@ -507,7 +517,9 @@ def _extract_events_from_weekly_pdf(pdf_bytes: bytes) -> list[Collection]:
         seen: set[tuple[datetime.date, str]] = set()
 
         for color, markers in marker_sets.items():
-            waste_type = WEEKLY_WASTE_TYPE_MAP[color]
+            waste_type = WEEKLY_WASTE_TYPE_MAP.get(color)
+            if waste_type is None:
+                continue
 
             for marker in markers:
                 cx = (marker["x0"] + marker["x1"]) / 2.0
