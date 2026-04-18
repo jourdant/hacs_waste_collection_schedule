@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 from statistics import median
-from typing import Any
+from typing import Any, TypedDict
 
 from waste_collection_schedule import Collection  # type: ignore[attr-defined]
 
@@ -17,12 +17,28 @@ TITLE = "Hornsby Shire Council"
 DESCRIPTION = "Source for Hornsby Shire Council."
 URL = "https://hornsby.nsw.gov.au/"
 TEST_CASES = {
-    "1 Cherrybrook Road, West Pennant Hills, 2125": {
+    "Residential test 1": {
         "address": "1 Cherrybrook Road, West Pennant Hills, 2125"
     },
-    "10 Albion Street, Pennant Hills, 2120": {
+    "Residential test 2": {
         "address": "10 Albion Street, Pennant Hills, 2120"
     },
+    "Residential test 3": {
+        "address": "20 Beecroft Road, Beecroft, 2119"
+    }
+}
+
+HOW_TO_GET_ARGUMENTS_DESCRIPTION = {
+    "en": "Use your full street address as shown in Hornsby's waste collection address search. Do not provide a geolocation ID; it is resolved automatically from your address."
+}
+
+PARAM_DESCRIPTIONS = {
+    "en": {
+        "address": (
+            "Full street address exactly as shown on the Hornsby waste page, "
+            "including suburb and postcode (without state/country)."
+        )
+    }
 }
 
 ICON_MAP = {
@@ -58,6 +74,32 @@ SHAPE_SIZE_TOLERANCE = 2.0
 MIN_MARKERS_PER_COLOR = 10
 
 _LOGGER = logging.getLogger(__name__)
+
+
+RGB = tuple[float, float, float]
+BBox = tuple[float, float, float, float]
+DigitWord = tuple[int, BBox]
+
+
+class PdfUrls(TypedDict):
+    weekly: str | None
+    bulky: str | None
+
+
+class MonthHeader(TypedDict):
+    month: str
+    year: int
+    bbox: BBox
+    center: tuple[float, float]
+    col: int | None
+
+
+class MarkerShape(TypedDict):
+    label: str
+    x0: float
+    top: float
+    x1: float
+    bottom: float
 
 
 def _http_get(url: str, timeout_s: float = 25.0) -> bytes:
@@ -158,9 +200,7 @@ def _select_bulky_waste_calendar_pdf_href(hrefs: list[str]) -> str | None:
     return None
 
 
-def _resolve_pdf_urls_for_address(
-    address: str, language: str = "en-AU"
-) -> dict[str, str | None]:
+def _resolve_pdf_urls_for_address(address: str, language: str = "en-AU") -> PdfUrls:
     """Resolve the PDF URLs for a given address via Hornsby Council API."""
     keywords = urllib.parse.quote(address, safe="")
     search_url = f"{BASE_URL}api/v1/myarea/search?keywords={keywords}"
@@ -197,13 +237,13 @@ def _resolve_pdf_urls_for_address(
     return {"weekly": weekly_url, "bulky": bulky_url}
 
 
-def _is_near_white(rgb: tuple[float, float, float]) -> bool:
+def _is_near_white(rgb: RGB) -> bool:
     """Check if an RGB color is near white."""
     r, g, b = rgb
     return r > 0.95 and g > 0.95 and b > 0.95
 
 
-def _classify_fill(rgb: tuple[float, float, float]) -> str:
+def _classify_fill(rgb: RGB) -> str:
     """Classify fill color into 'green' or 'yellow'."""
     r, g, b = rgb
     if g > 0.45 and r < 0.45 and b < 0.45:
@@ -213,7 +253,7 @@ def _classify_fill(rgb: tuple[float, float, float]) -> str:
     return "unknown"
 
 
-def _normalize_color_to_rgb(color: Any) -> tuple[float, float, float] | None:
+def _normalize_color_to_rgb(color: Any) -> RGB | None:
     """Normalize a pdfplumber color value to an RGB tuple (0-1 range)."""
     if color is None:
         return None
@@ -237,10 +277,10 @@ def _normalize_color_to_rgb(color: Any) -> tuple[float, float, float] | None:
     return None
 
 
-def _extract_month_headers(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _extract_month_headers(words: list[dict[str, Any]]) -> list[MonthHeader]:
     """Extract month headers from words by pairing month and year tokens."""
     month_name_set = set(MONTH_NUM_MAP.keys())
-    headers: list[dict[str, Any]] = []
+    headers: list[MonthHeader] = []
 
     for i, word in enumerate(words):
         month_text = word["text"].upper().strip()
@@ -278,9 +318,9 @@ def _extract_month_headers(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return headers
 
 
-def _collect_colored_shapes(page: Any) -> list[dict[str, Any]]:
+def _collect_colored_shapes(page: Any) -> list[MarkerShape]:
     """Collect colored marker-like shapes from page rects and curves."""
-    shapes: list[dict[str, Any]] = []
+    shapes: list[MarkerShape] = []
 
     def _add_shape(label: str, x0: float, top: float, x1: float, bottom: float) -> None:
         if label == "unknown":
@@ -336,13 +376,15 @@ def _collect_colored_shapes(page: Any) -> list[dict[str, Any]]:
     return shapes
 
 
-def _build_marker_sets(colored_shapes: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+def _build_marker_sets(
+    colored_shapes: list[MarkerShape],
+) -> dict[str, list[MarkerShape]]:
     """Group marker shapes by color and keep only consistent sizes."""
-    by_label: dict[str, list[dict[str, Any]]] = {}
+    by_label: dict[str, list[MarkerShape]] = {}
     for shape in colored_shapes:
         by_label.setdefault(shape["label"], []).append(shape)
 
-    marker_sets: dict[str, list[dict[str, Any]]] = {}
+    marker_sets: dict[str, list[MarkerShape]] = {}
     for label, items in by_label.items():
         widths = sorted(item["x1"] - item["x0"] for item in items)
         heights = sorted(item["bottom"] - item["top"] for item in items)
@@ -362,8 +404,8 @@ def _build_marker_sets(colored_shapes: list[dict[str, Any]]) -> dict[str, list[d
 
 
 def _find_day_for_marker(
-    marker: dict[str, Any],
-    digit_words: list[tuple[int, tuple[float, float, float, float]]],
+    marker: MarkerShape,
+    digit_words: list[DigitWord],
 ) -> int | None:
     """Find day number for marker by containment then overlap area."""
     cx = (marker["x0"] + marker["x1"]) / 2.0
@@ -446,7 +488,7 @@ def _extract_events_from_weekly_pdf(pdf_bytes: bytes) -> list[Collection]:
             )
 
         # Extract digit words with bounding boxes (top-down coordinates)
-        digit_words: list[tuple[int, tuple[float, float, float, float]]] = []
+        digit_words: list[DigitWord] = []
         for w in words:
             if re.fullmatch(r"\d{1,2}", w["text"]):
                 digit_words.append(

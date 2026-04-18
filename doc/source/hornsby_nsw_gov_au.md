@@ -25,6 +25,8 @@ waste_collection_schedule:
 
 Your street address within Hornsby Shire, exactly as it appears when searching on the [council's waste collection page](https://www.hornsby.nsw.gov.au/Property/Waste-and-recycling/Your-weekly-collection/Find-your-waste-collection-dates).
 
+Do **not** enter a `geolocationid`/property ID. This source resolves that internally from the address.
+
 **Note:** Include the street number, street name, suburb, and postcode, but do not include the state (NSW) or country. For example: `1 Cherrybrook Road, West Pennant Hills, 2125`.
 
 ## Example
@@ -41,5 +43,5 @@ waste_collection_schedule:
 
 1. Visit the [Hornsby Shire Council waste collection page](https://www.hornsby.nsw.gov.au/Property/Waste-and-recycling/Your-weekly-collection/Find-your-waste-collection-dates).
 2. Enter your address in the search box and select your property from the autocomplete suggestions.
-3. Use the exact address text that was autocompleted/selected (including the suburb but without state or postcode).
+3. Use the exact address text that was autocompleted/selected (including suburb and postcode, without state/country).
 4. Copy this address into your Home Assistant configuration.

@@ -149,7 +149,9 @@
   },
   "hornsby_nsw_gov_au": {
     "docs_url": "https://github.com/mampfes/hacs_waste_collection_schedule/blob/master/doc/source/hornsby_nsw_gov_au.md",
-    "howto": {}
+    "howto": {
+      "en": "Use your full street address as shown in Hornsby's waste collection address search. Do not provide a geolocation ID; it is resolved automatically from your address."
+    }
   },
   "hume_vic_gov_au": {
     "docs_url": "https://github.com/mampfes/hacs_waste_collection_schedule/blob/master/doc/source/hume_vic_gov_au.md",
